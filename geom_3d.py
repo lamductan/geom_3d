@@ -25,9 +25,131 @@ def _approx(a, b):
     return res
 
 def compute_norm(u: np.ndarray):
-    if isinstance(u, Point3D) or isinstance(u, Vector3D):
+    if isinstance(u, Point2D) or isinstance(u, Vector2D):
+        u = u.arr
+    elif isinstance(u, Point3D) or isinstance(u, Vector3D):
         u = u.arr
     return np.sqrt(np.sum(u**2))
+
+
+class Point2D:    
+    def __init__(self, arr: np.ndarray):
+        self.x, self.y = arr
+        self.arr = arr
+
+    def get_np_array(self) -> np.ndarray:
+        return self.arr.copy()
+
+    def __str__(self) -> str:
+        return "Point3D({0}, {1})".format(self.x, self.y)
+
+    def __getitem__(self, idx):
+        return self.arr[idx]
+
+    def approx(self, p2) -> bool:
+        arr = p2 if not isinstance(p2, Point2D) else p2.arr
+        return _approx(self.arr, arr)
+
+    def __eq__(self, p2) -> bool:
+        return self.approx(p2)
+
+    def __add__(self, p2):
+        arr = p2 if not isinstance(p2, Point2D) else p2.arr
+        return Point2D(self.arr + arr)
+
+    def __sub__(self, p2):
+        arr = p2 if not isinstance(p2, Point2D) else p2.arr
+        return Point2D(self.arr - arr)
+
+    def __mul__(self, t):
+        arr = t if not isinstance(t, Point2D) else t.arr
+        return Point2D(self.arr*arr)
+
+    def __truediv__(self, t):
+        return Point2D(self.arr/t)
+
+
+class Vector2D(Point2D):
+    def norm(self):
+        return compute_norm(self.arr)
+
+    def __str__(self) -> str:
+        return "Vector2D({0}, {1})".format(self.x, self.y)
+
+
+class Line2D:
+    def __init__(self, point: Point2D, norm_vector: Vector2D):
+        self.a, self.b = norm_vector.arr
+        self.norm_vector = norm_vector
+        self.d = -np.dot(norm_vector.arr, point.arr)
+        self.point0 = point
+        self.norm_val = compute_norm(self.norm_vector)
+
+    def __str__(self) -> str:
+        return f"Plane({self.a:.3f}*x + {self.b:.3f}*y + {self.d:.3f} = 0)"
+
+    @classmethod
+    def from_coefficient(cls, coefficient: np.ndarray):
+        norm_vector = Vector2D(coefficient[:2])
+        d = coefficient[2]
+        point_arr = np.zeros(2)
+        for i in range(2):
+            if not _approx(norm_vector[i], 0.0):
+                point_arr[i] = -d/norm_vector[i]
+                break
+        point = Point2D(point_arr)
+        return Line2D(point, norm_vector)
+
+    @classmethod
+    def from_two_points(cls, point1: Point2D, point2: Point2D):
+        v1 = Vector2D((point1 - point2).arr)
+        norm_arr = v1.arr[::-1]*np.array([-1, 1])
+        norm_vector = Vector2D(norm_arr)
+        return Line2D(point1, norm_vector)
+    
+    def __call__(self, point: Point2D):
+        return np.dot(self.norm_vector.arr, point.arr) + self.d
+
+    def passes_through(self, point: Point2D) -> bool:
+        return _approx(self.__call__(point), 0.0)
+
+    def has_same_norm_vector_with(self, line2d) -> bool:
+        k = None
+        for i in range(2):
+            if not _approx(self.norm_vector[i], 0.0):
+                k = line2d.norm_vector[i] / self.norm_vector[i]
+                break
+        norm_vector_1 = self.norm_vector * k
+        return _approx(line2d.norm_vector, norm_vector_1)
+
+    def is_parallel_with_line(self, line2d) -> bool:
+        if not self.has_same_norm_vector_with(line2d):
+            return False
+        return not line2d.passes_through(self.point0)
+
+    def is_identical(self, line2d) -> bool:
+        if not self.has_same_norm_vector_with(line2d):
+            return False
+        return line2d.passes_through(self.point0)
+
+    def find_intersection_with_line(self, line2d) -> Point2D:
+        if self.has_same_norm_vector_with(line2d):
+            return None
+        a = np.array([[self.a, self.b], [line2d.a, line2d.b]])
+        b = np.array([-self.d, -line2d.d])
+        x, y = np.linalg.solve(a, b)
+        return Point2D(np.array([x, y]))
+
+    def get_a_point(self):
+        return self.point0
+
+    def distance_to_point(self, point2d: Point2D):
+        return np.abs(self.__call__(point2d))/self.norm_val
+
+    def distance_to_line(self, line2d):
+        if not self.is_parallel_with_line(line2d):
+            return 0
+        return np.abs(self.d - line2d.d)/self.norm_val
 
 
 class Point3D:    
@@ -334,7 +456,7 @@ class Plane:
         return self.point0
 
     def distance_to_point(self, point3d: Point3D):
-        return self.__call__(point3d)/self.norm_val
+        return np.abs(self.__call__(point3d))/self.norm_val
 
     def distance_to_line(self, line3d: Line3D):
         if not self.is_parallel_with_line(line3d):
